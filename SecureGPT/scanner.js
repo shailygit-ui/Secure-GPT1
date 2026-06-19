@@ -8,22 +8,17 @@ function scanPrompt(text) {
     const phoneRegex = /\b(\+91[\s-]?)?[6-9]\d{9}\b|\b0?[6-9]\d{9}\b/g;
     const emailRegex = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g;
 
-    // credit card (raw detection first)
     const creditCardRegex = /\b(?:\d[ -]*?){13,19}\b/g;
 
-    // API keys (stronger patterns)
     const apiKeyRegex = /\b(sk|AKIA|AIza)[A-Za-z0-9_\-]{10,}\b/gi;
 
     const passwordRegex = /password|passwd|pwd|secret|passcode/i;
 
     function maskDigits(str, keep = 4) {
         const digits = str.replace(/\D/g, "");
-        return "X".repeat(Math.max(0, digits.length - keep)) + digits.slice(-keep);
+        return "X".repeat(Math.max(0, digits.length - keep)) + digits.slice(-4);
     }
 
-    // -----------------------
-    // Luhn Algorithm (Credit Card Validation)
-    // -----------------------
     function isValidCard(number) {
         let sum = 0;
         let shouldDouble = false;
@@ -45,9 +40,6 @@ function scanPrompt(text) {
         return sum % 10 === 0;
     }
 
-    // -----------------------
-    // High entropy check (for fake API keys / secrets)
-    // -----------------------
     function isHighEntropy(str) {
         return (
             /[A-Za-z]/.test(str) &&
@@ -57,9 +49,7 @@ function scanPrompt(text) {
         );
     }
 
-    // -----------------------
     // Aadhaar
-    // -----------------------
     if (aadhaarRegex.test(text)) {
         findings.push("Aadhaar Number");
         risk += 80;
@@ -70,9 +60,7 @@ function scanPrompt(text) {
         });
     }
 
-    // -----------------------
-    // Phone (FIXED)
-    // -----------------------
+    // Phone
     const phoneMatches = text.match(phoneRegex);
     if (phoneMatches) {
         findings.push("Phone Number");
@@ -84,9 +72,7 @@ function scanPrompt(text) {
         });
     }
 
-    // -----------------------
     // Email
-    // -----------------------
     if (emailRegex.test(text)) {
         findings.push("Email Address");
         risk += 40;
@@ -97,9 +83,7 @@ function scanPrompt(text) {
         });
     }
 
-    // -----------------------
-    // Credit Card (FIXED + Luhn validation)
-    // -----------------------
+    // Credit Card
     const cardMatches = text.match(creditCardRegex);
 
     if (cardMatches) {
@@ -117,9 +101,7 @@ function scanPrompt(text) {
         }
     }
 
-    // -----------------------
-    // API Key (stronger detection)
-    // -----------------------
+    // API Key
     if (apiKeyRegex.test(text) || isHighEntropy(text)) {
         findings.push("API Key / Secret");
         risk += 100;
@@ -127,25 +109,30 @@ function scanPrompt(text) {
         sanitizedText = sanitizedText.replace(apiKeyRegex, "sk-***************");
     }
 
-    // -----------------------
     // Password mention
-    // -----------------------
     if (passwordRegex.test(text)) {
         findings.push("Password Mention");
         risk += 70;
     }
 
-    // -----------------------
     // Final scoring
-    // -----------------------
     const trustScore = Math.max(0, 100 - risk);
+
+    // 🆕 RISK LEVEL FUNCTION
+    function getRiskLevel(score) {
+        if (score >= 100) return "CRITICAL";
+        if (score >= 70) return "HIGH";
+        if (score >= 40) return "MEDIUM";
+        return "LOW";
+    }
 
     return {
         findings,
         risk,
         trustScore,
         sanitizedText,
-        blocked: risk >= 40
+        blocked: risk >= 40,
+        riskLevel: getRiskLevel(risk)
     };
 }
 

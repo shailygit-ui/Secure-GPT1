@@ -1,74 +1,129 @@
+require("dotenv").config();
+console.log("KEY LOADED:", process.env.ARMORIQ_API_KEY?.slice(0, 10));
+
 const express = require("express");
 const cors = require("cors");
 
 const scanPrompt = require("./scanner");
+
+const { ArmorIQClient } = require("@armoriq/sdk");
 
 const app = express();
 
 app.use(cors());
 app.use(express.json());
 
-app.get("/", (req,res)=>{
+/* -----------------------------
+   ARMORIQ CLIENT (INIT ONCE)
+------------------------------*/
+
+const client = new ArmorIQClient({
+    apiKey: process.env.ARMORIQ_API_KEY,
+    userId: "securegpt-service",
+    agentId: "securegpt-agent",
+});
+
+/* -----------------------------
+   ARMORIQ CALL
+------------------------------*/
+
+async function callArmorIQ(prompt) {
+    try {
+        console.log("CALLING ARMORIQ WITH:", prompt);
+
+        const result = await client.invoke({
+            userId: "securegpt-service",
+            agentId: "securegpt-agent",
+            input: prompt
+        });
+
+        console.log("ARMORIQ RESULT:", result);
+
+        return result;
+
+    } catch (err) {
+        console.error("ArmorIQ SDK Error:", err);
+
+        return {
+            decision: "ERROR",
+            risk: 0,
+            findings: []
+        };
+    }
+}
+
+/* -----------------------------
+   ROUTES
+------------------------------*/
+
+app.get("/", (req, res) => {
     res.send("SecureGPT Backend Running");
 });
 
-app.get("/test", (req,res)=>{
-
-    const result = scanPrompt(
-        "My password is admin123 and my API key is sk-abcdef"
-    );
-
-    res.json(result);
+/* simple local test */
+app.get("/test", (req, res) => {
+    res.json(scanPrompt("My password is admin123"));
 });
 
-// app.post("/scan", (req,res)=>{
+/* -----------------------------
+   MAIN SCAN ROUTE (CLEAN)
+------------------------------*/
 
-//     const prompt = req.body.prompt;
-
-//     const result = scanPrompt(prompt);
-
-//     res.json(result);
-// });
-
-app.post("/scan", (req, res) => {
-
+app.post("/scan", async (req, res) => {
     try {
-
-        console.log("Received:", req.body);
-
         const prompt = req.body.prompt || "";
 
-        const result = scanPrompt(prompt);
+        // LOCAL SCAN
+        const localResult = scanPrompt(prompt);
 
-        console.log("Result:", result);
+        // ARMORIQ SCAN
+        const armoriqResult = await callArmorIQ(prompt);
 
-        res.json(result);
+        // FINAL DECISION (simple + stable)
+        const blocked =
+            localResult.blocked === true ||
+            armoriqResult?.decision === "BLOCK";
+
+        const risk =
+            (localResult.risk || 0) + (armoriqResult?.risk || 0);
+
+        res.json({
+            input: prompt,
+
+            local: localResult,
+            armoriq: armoriqResult,
+
+            security: {
+                riskScore: risk,
+                status: blocked ? "BLOCKED" : "SAFE",
+                allowed: !blocked
+            }
+        });
 
     } catch (error) {
-
-        console.error(error);
+        console.error("SCAN ERROR:", error);
 
         res.status(500).json({
             error: error.message
         });
-
     }
-
 });
 
-// app.get("/test", (req,res)=>{
+/* -----------------------------
+   TEST ROUTE
+------------------------------*/
 
-//     const result = scanPrompt(
-//         "My password is admin123 and my API key is sk-abcdef"
-//     );
+app.get("/armoriq-test", async (req, res) => {
+    const result = await callArmorIQ("test prompt");
+    res.json(result);
+});
 
-//     res.json(result);
-// });
+/* -----------------------------
+   SERVER START
+------------------------------*/
 
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });
-
-
