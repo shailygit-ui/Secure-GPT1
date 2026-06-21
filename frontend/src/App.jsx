@@ -4,6 +4,7 @@ import { jsPDF } from "jspdf";
 import StatCard from "./components/StatCard";
 import RiskGauge from "./components/RiskGuage";
 import Analytics from "./components/Analytics";
+
 import { useState } from "react";
 import axios from "axios";
 import "./App.css";
@@ -15,32 +16,40 @@ function App() {
   const [history, setHistory] = useState([]);
 
   const scanPrompt = async () => {
-    try {
-      setLoading(true);
+  try {
+    setLoading(true);
 
-      const response = await axios.post("http://localhost:5000/scan", {
+    const response = await axios.post("http://localhost:5000/scan", {
+      prompt,
+    });
+
+    console.log("API RESPONSE:", response.data); // DEBUG (keep for now)
+
+    setResult(response.data);
+
+    setHistory((prev) => [
+      {
         prompt,
-      });
 
-      setResult(response.data);
-      setHistory((prev) => [
-  {
-    prompt,
-    risk: response.data.local?.risk || 0,
-    blocked: response.data.local?.blocked,
-    time: new Date().toLocaleTimeString(),
-  },
-  ...prev,
-]);
-    } catch (error) {
-      console.error(error);
-      alert("Unable to connect to backend.");
-    } finally {
-      setLoading(false);
-    }
-  };
+        // ✅ FIXED PATHS
+        risk: response.data.engines?.local?.risk || 0,
 
-  const local = result?.local || {};
+        blocked: response.data.security?.status === "BLOCKED",
+
+        time: new Date().toLocaleTimeString(),
+      },
+      ...prev,
+    ]);
+  } catch (error) {
+    console.error(error);
+    alert("Unable to connect to backend.");
+  } finally {
+    setLoading(false);
+  }
+};
+
+  const local = result?.engines?.local || {};
+  const armoriq = result?.engines?.armoriq || {};
   const security = result?.security || {};
 
   const getThreatLevel = () => {
@@ -329,7 +338,7 @@ function App() {
                   <strong>
                     {result.armoriq
                       ? "🟢 Connected"
-                      : "⚪ Offline"}
+                      : "⚪ online"}
                   </strong>
 
                 </div>
